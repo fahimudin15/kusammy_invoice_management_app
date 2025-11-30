@@ -9,6 +9,7 @@ import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Plus, Trash2 } from "lucide-react"
+import { invoiceService } from "@/lib/invoice-service"
 
 const PRODUCTS = {
   bodyLotions: [
@@ -103,7 +104,7 @@ export default function CreateInvoice() {
   const taxAmount = (subtotal * Number.parseFloat(tax)) / 100
   const total = subtotal + taxAmount
 
-  const handleSave = () => {
+  const handleSave = async () => {
     if (!customerName.trim()) {
       alert("Please enter a customer name")
       return
@@ -115,26 +116,30 @@ export default function CreateInvoice() {
     }
 
     const invoiceNumber = `INV-${Date.now()}`
-    const invoice = {
-      id: invoiceNumber,
-      invoiceNumber,
-      customerName,
-      customerPhone,
-      customerAddress,
+    const invoiceData = {
+      invoice_number: invoiceNumber,
+      customer_name: customerName,
+      customer_phone: customerPhone,
+      customer_address: customerAddress,
       notes,
       items,
       subtotal,
       tax: Number.parseFloat(tax),
-      taxAmount,
-      totalAmount: total,
-      date: new Date().toISOString(),
-      companyInfo,
+      tax_amount: taxAmount,
+      total_amount: total,
+      company_info: companyInfo,
     }
 
-    const existing = JSON.parse(localStorage.getItem("invoices") || "[]")
-    localStorage.setItem("invoices", JSON.stringify([...existing, invoice]))
+    const { data, error } = await invoiceService.createInvoice(invoiceData)
 
-    router.push(`/invoices/${invoiceNumber}`)
+    if (error) {
+      alert(`Error creating invoice: ${error.message}`)
+      return
+    }
+
+    if (data) {
+      router.push(`/invoices/${data.invoice_number}`)
+    }
   }
 
   const categoryProducts = selectedCategory

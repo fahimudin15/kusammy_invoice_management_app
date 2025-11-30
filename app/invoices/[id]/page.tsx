@@ -5,26 +5,11 @@ import { useParams } from "next/navigation"
 import Navigation from "@/components/navigation"
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
-import { Printer, Download, ArrowLeft } from "lucide-react"
+import { Printer, Download, ArrowLeft, Loader2 } from "lucide-react"
 import Link from "next/link"
 import html2canvas from "html2canvas"
 import jsPDF from "jspdf"
-
-interface Invoice {
-  id: string
-  invoiceNumber: string
-  customerName: string
-  customerPhone: string
-  customerAddress: string
-  notes: string
-  items: any[]
-  subtotal: number
-  tax: number
-  taxAmount: number
-  totalAmount: number
-  date: string
-  companyInfo: any
-}
+import { invoiceService, Invoice } from "@/lib/invoice-service"
 
 export default function InvoiceDetail() {
   const params = useParams()
@@ -32,15 +17,23 @@ export default function InvoiceDetail() {
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    const invoiceId = params.id as string
-    const stored = localStorage.getItem("invoices")
-    if (stored) {
-      const invoices = JSON.parse(stored)
-      const found = invoices.find((inv: Invoice) => inv.id === invoiceId)
-      setInvoice(found || null)
-    }
-    setLoading(false)
+    const invoiceNumber = params.id as string
+    loadInvoice(invoiceNumber)
   }, [params.id])
+
+  const loadInvoice = async (invoiceNumber: string) => {
+    setLoading(true)
+    const { data, error } = await invoiceService.getInvoiceByNumber(invoiceNumber)
+
+    if (error) {
+      console.error("Error loading invoice:", error)
+      setLoading(false)
+      return
+    }
+
+    setInvoice(data)
+    setLoading(false)
+  }
 
   const handlePrint = () => {
     window.print()
@@ -57,7 +50,7 @@ export default function InvoiceDetail() {
       const width = pdf.internal.pageSize.getWidth()
       const height = (canvas.height * width) / canvas.width
       pdf.addImage(imgData, "PNG", 0, 0, width, height)
-      pdf.save(`${invoice?.invoiceNumber}.pdf`)
+      pdf.save(`${invoice?.invoice_number}.pdf`)
     } catch (error) {
       console.error("Error generating PDF:", error)
       alert("Error generating PDF. Please try again.")
@@ -69,7 +62,9 @@ export default function InvoiceDetail() {
       <>
         <Navigation />
         <main className="min-h-screen bg-background p-4 sm:p-8">
-          <div className="text-center text-muted-foreground">Loading...</div>
+          <div className="flex items-center justify-center min-h-[400px]">
+            <Loader2 className="h-8 w-8 animate-spin text-primary" />
+          </div>
         </main>
       </>
     )
@@ -126,15 +121,17 @@ export default function InvoiceDetail() {
                 <div className="flex justify-between items-start mb-8">
                   <div>
                     <h1 className="text-3xl font-bold text-foreground">INVOICE</h1>
-                    <p className="text-lg font-semibold text-primary mt-2">{invoice.invoiceNumber}</p>
+                    <p className="text-lg font-semibold text-primary mt-2">{invoice.invoice_number}</p>
                   </div>
                   <div className="text-right">
-                    <h2 className="text-xl font-bold text-foreground">{invoice.companyInfo.name}</h2>
-                    {invoice.companyInfo.address && (
-                      <p className="text-sm text-muted-foreground mt-1">{invoice.companyInfo.address}</p>
+                    <h2 className="text-xl font-bold text-foreground">
+                      {invoice.company_info?.name || "Kusammy Store"}
+                    </h2>
+                    {invoice.company_info?.address && (
+                      <p className="text-sm text-muted-foreground mt-1">{invoice.company_info.address}</p>
                     )}
-                    {invoice.companyInfo.phone && (
-                      <p className="text-sm text-muted-foreground">{invoice.companyInfo.phone}</p>
+                    {invoice.company_info?.phone && (
+                      <p className="text-sm text-muted-foreground">{invoice.company_info.phone}</p>
                     )}
                   </div>
                 </div>
@@ -144,16 +141,18 @@ export default function InvoiceDetail() {
               <div className="grid grid-cols-2 gap-8 mb-8 pb-8 border-b border-border">
                 <div>
                   <h3 className="text-sm font-semibold text-muted-foreground uppercase mb-3">Bill To</h3>
-                  <p className="font-semibold text-foreground">{invoice.customerName}</p>
-                  {invoice.customerPhone && <p className="text-sm text-muted-foreground">{invoice.customerPhone}</p>}
-                  {invoice.customerAddress && (
-                    <p className="text-sm text-muted-foreground mt-2 whitespace-pre-wrap">{invoice.customerAddress}</p>
+                  <p className="font-semibold text-foreground">{invoice.customer_name}</p>
+                  {invoice.customer_phone && <p className="text-sm text-muted-foreground">{invoice.customer_phone}</p>}
+                  {invoice.customer_address && (
+                    <p className="text-sm text-muted-foreground mt-2 whitespace-pre-wrap">{invoice.customer_address}</p>
                   )}
                 </div>
                 <div className="text-right">
                   <div className="mb-3">
                     <p className="text-sm text-muted-foreground">Invoice Date</p>
-                    <p className="font-semibold text-foreground">{new Date(invoice.date).toLocaleDateString()}</p>
+                    <p className="font-semibold text-foreground">
+                      {new Date(invoice.created_at).toLocaleDateString()}
+                    </p>
                   </div>
                 </div>
               </div>
@@ -187,15 +186,15 @@ export default function InvoiceDetail() {
                 <div className="w-full max-w-xs">
                   <div className="flex justify-between mb-2">
                     <span className="text-muted-foreground">Subtotal</span>
-                    <span className="text-foreground">₦{invoice.subtotal.toFixed(2)}</span>
+                    <span className="text-foreground">₦{Number(invoice.subtotal).toFixed(2)}</span>
                   </div>
                   <div className="flex justify-between mb-3 pb-3 border-b border-border">
                     <span className="text-muted-foreground">Tax ({invoice.tax}%)</span>
-                    <span className="text-foreground">₦{invoice.taxAmount.toFixed(2)}</span>
+                    <span className="text-foreground">₦{Number(invoice.tax_amount).toFixed(2)}</span>
                   </div>
                   <div className="flex justify-between">
                     <span className="font-semibold text-foreground">Total</span>
-                    <span className="text-2xl font-bold text-primary">₦{invoice.totalAmount.toFixed(2)}</span>
+                    <span className="text-2xl font-bold text-primary">₦{Number(invoice.total_amount).toFixed(2)}</span>
                   </div>
                 </div>
               </div>

@@ -6,59 +6,60 @@ import Navigation from "@/components/navigation"
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { Eye, Trash2, Plus } from "lucide-react"
-
-interface Invoice {
-  id: string
-  invoiceNumber: string
-  customerName: string
-  totalAmount: number
-  date: string
-}
+import { Eye, Trash2, Plus, Loader2 } from "lucide-react"
+import { invoiceService, Invoice } from "@/lib/invoice-service"
 
 export default function InvoicesList() {
   const [invoices, setInvoices] = useState<Invoice[]>([])
   const [searchTerm, setSearchTerm] = useState("")
   const [sortBy, setSortBy] = useState<"date" | "amount">("date")
+  const [loading, setLoading] = useState(true)
 
   useEffect(() => {
     loadInvoices()
   }, [])
 
-  const loadInvoices = () => {
-    const stored = localStorage.getItem("invoices")
-    if (stored) {
-      const parsed = JSON.parse(stored)
-      setInvoices(parsed)
+  const loadInvoices = async () => {
+    setLoading(true)
+    const { data, error } = await invoiceService.getInvoices()
+
+    if (error) {
+      console.error("Error loading invoices:", error)
+      setLoading(false)
+      return
     }
+
+    if (data) {
+      setInvoices(data)
+    }
+    setLoading(false)
   }
 
-  const handleDelete = (id: string) => {
+  const handleDelete = async (id: string) => {
     if (confirm("Are you sure you want to delete this invoice?")) {
-      const updated = invoices.filter((inv) => inv.id !== id)
-      setInvoices(updated)
-      localStorage.setItem("invoices", JSON.stringify(updated))
-    }
-  }
+      const { error } = await invoiceService.deleteInvoice(id)
 
-  const handleClearAll = () => {
-    if (confirm("Are you sure you want to delete all invoices? This action cannot be undone.")) {
-      setInvoices([])
-      localStorage.setItem("invoices", JSON.stringify([]))
+      if (error) {
+        alert(`Error deleting invoice: ${error.message}`)
+        return
+      }
+
+      // Reload invoices after deletion
+      loadInvoices()
     }
   }
 
   const filtered = invoices
     .filter(
       (inv) =>
-        inv.customerName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        inv.invoiceNumber.toLowerCase().includes(searchTerm.toLowerCase()),
+        inv.customer_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        inv.invoice_number.toLowerCase().includes(searchTerm.toLowerCase()),
     )
     .sort((a, b) => {
       if (sortBy === "date") {
-        return new Date(b.date).getTime() - new Date(a.date).getTime()
+        return new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
       }
-      return b.totalAmount - a.totalAmount
+      return Number(b.total_amount) - Number(a.total_amount)
     })
 
   return (
@@ -102,7 +103,11 @@ export default function InvoicesList() {
           {/* Invoices Table */}
           <Card className="bg-card border border-border">
             <CardContent className="p-0">
-              {filtered.length === 0 ? (
+              {loading ? (
+                <div className="py-12 flex items-center justify-center">
+                  <Loader2 className="h-8 w-8 animate-spin text-primary" />
+                </div>
+              ) : filtered.length === 0 ? (
                 <div className="py-12 text-center">
                   <p className="text-muted-foreground mb-4">No invoices found</p>
                   <Link href="/invoices/create">
@@ -127,14 +132,16 @@ export default function InvoicesList() {
                       {filtered.map((invoice) => (
                         <tr key={invoice.id}>
                           <td>
-                            <span className="font-semibold text-primary">{invoice.invoiceNumber}</span>
+                            <span className="font-semibold text-primary">{invoice.invoice_number}</span>
                           </td>
-                          <td className="text-foreground">{invoice.customerName}</td>
-                          <td className="text-muted-foreground">{new Date(invoice.date).toLocaleDateString()}</td>
-                          <td className="font-semibold text-foreground">₦{invoice.totalAmount.toFixed(2)}</td>
+                          <td className="text-foreground">{invoice.customer_name}</td>
+                          <td className="text-muted-foreground">
+                            {new Date(invoice.created_at).toLocaleDateString()}
+                          </td>
+                          <td className="font-semibold text-foreground">₦{Number(invoice.total_amount).toFixed(2)}</td>
                           <td>
                             <div className="flex gap-2">
-                              <Link href={`/invoices/${invoice.id}`}>
+                              <Link href={`/invoices/${invoice.invoice_number}`}>
                                 <Button variant="ghost" size="sm" className="text-primary hover:bg-primary/10">
                                   <Eye className="h-4 w-4" />
                                 </Button>
@@ -157,18 +164,6 @@ export default function InvoicesList() {
               )}
             </CardContent>
           </Card>
-
-          {invoices.length > 0 && (
-            <div className="mt-6 text-center">
-              <Button
-                variant="outline"
-                onClick={handleClearAll}
-                className="border-destructive text-destructive hover:bg-destructive/10 bg-transparent"
-              >
-                Clear All Invoices
-              </Button>
-            </div>
-          )}
         </div>
       </main>
     </>
